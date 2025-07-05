@@ -158,6 +158,12 @@ secrets.json
 .env.local
 .env.production
 
+# RSA Keys
+*.pem
+*.key
+keys/
+rsa_keys/
+
 # Logs
 logs/
 *.log
