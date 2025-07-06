@@ -1,6 +1,3 @@
-"""
-Automated tests for Yggdrasil API
-"""
 import json
 import time
 from django.test import TestCase, Client
@@ -10,8 +7,6 @@ import jwt
 
 
 class YggdrasilAuthTestCase(TestCase):
-    """Tests for authentication endpoints"""
-    
     def setUp(self):
         """Setup before each test"""
         self.client = Client()
@@ -21,7 +16,6 @@ class YggdrasilAuthTestCase(TestCase):
         self.signout_url = '/yggdrasil/auth/signout'
         self.invalidate_url = '/yggdrasil/auth/invalidate'
         
-        # Test data
         self.valid_credentials = {
             'username': 'testuser',
             'password': 'testpass',
@@ -101,16 +95,16 @@ class YggdrasilAuthTestCase(TestCase):
     def test_authenticate_username_validation(self):
         """Test username validation"""
         invalid_usernames = [
-            'user@domain.com',  # contains @
-            'user name',        # contains space
-            'user.name',        # contains dot
-            'a' * 17,           # too long
-            '',                 # empty
-            'user123!',         # contains special characters
+            'user@domain.com',
+            'user name',
+            'user.name',
+            'a' * 17,
+            '',
+            'user123!',
         ]
         valid_but_wrong_usernames = [
-            'notexist',        # valid format but non-existent
-            'testuser1',       # valid format but non-existent
+            'notexist',
+            'testuser1',
         ]
         # Check invalid usernames
         for username in invalid_usernames:
@@ -128,6 +122,7 @@ class YggdrasilAuthTestCase(TestCase):
             data = json.loads(response.content)
             self.assertEqual(data['error'], 'ForbiddenOperationException')
             self.assertEqual(data['errorMessage'], 'Forbidden')
+        
         # Check valid but non-existent usernames
         for username in valid_but_wrong_usernames:
             test_data = {
@@ -148,10 +143,10 @@ class YggdrasilAuthTestCase(TestCase):
     def test_authenticate_password_validation(self):
         """Test password validation"""
         invalid_passwords = [
-            '',                 # empty
-            'a' * 101,          # too long
-            'pass\nword',       # contains newline
-            'pass\tword',       # contains tab
+            '',
+            'a' * 101,
+            'pass\nword',
+            'pass\tword',
         ]
         
         for password in invalid_passwords:
@@ -170,12 +165,10 @@ class YggdrasilAuthTestCase(TestCase):
             self.assertEqual(response.status_code, 403)
             data = json.loads(response.content)
             self.assertEqual(data['error'], 'ForbiddenOperationException')
-            # For invalid passwords, it can be either 'Forbidden' or 'Invalid credentials'
             self.assertIn(data['errorMessage'], ['Forbidden', 'Invalid credentials. Invalid username or password.'])
 
     def test_refresh_success(self):
         """Test successful token refresh"""
-        # First get token
         auth_response = self.client.post(
             self.authenticate_url,
             data=json.dumps(self.valid_credentials),
@@ -183,7 +176,6 @@ class YggdrasilAuthTestCase(TestCase):
         )
         auth_data = json.loads(auth_response.content)
         
-        # Refresh token
         refresh_data = {
             'accessToken': auth_data['accessToken'],
             'clientToken': auth_data['clientToken']
@@ -515,6 +507,37 @@ class YggdrasilURLTestCase(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertContains(response, 'Yggdrasil')
 
+    def test_publickeys_endpoint(self):
+        """Test publickeys endpoint"""
+        response = self.client.get('/yggdrasil/services/publickeys')
+        self.assertEqual(response.status_code, 200)
+        
+        data = json.loads(response.content)
+        self.assertIn('profilePropertyKeys', data)
+        self.assertIn('playerCertificateKeys', data)
+        
+        # Check profilePropertyKeys format
+        self.assertIsInstance(data['profilePropertyKeys'], list)
+        self.assertGreater(len(data['profilePropertyKeys']), 0)
+        self.assertIn('publicKey', data['profilePropertyKeys'][0])
+        
+        # Check playerCertificateKeys format
+        self.assertIsInstance(data['playerCertificateKeys'], list)
+        self.assertGreater(len(data['playerCertificateKeys']), 0)
+        self.assertIn('publicKey', data['playerCertificateKeys'][0])
+        
+        # Check that it's a valid Base64 public key
+        public_key = data['profilePropertyKeys'][0]['publicKey']
+        # Should be Base64 encoded (no PEM headers)
+        self.assertNotIn('-----BEGIN PUBLIC KEY-----', public_key)
+        self.assertNotIn('-----END PUBLIC KEY-----', public_key)
+        # Should be valid Base64
+        import base64
+        try:
+            base64.b64decode(public_key)
+        except Exception:
+            self.fail("Public key is not valid Base64")
+
 
 class YggdrasilIntegrationTestCase(TestCase):
     """Integration tests for full cycle"""
@@ -627,3 +650,257 @@ class YggdrasilIntegrationTestCase(TestCase):
         )
         
         self.assertEqual(refresh_response.status_code, 403)
+
+
+class YggdrasilSessionTestCase(TestCase):
+    """Test cases for session management endpoints"""
+    
+    def setUp(self):
+        """Set up test data"""
+        self.join_url = '/yggdrasil/session/join'
+        self.has_joined_url = '/yggdrasil/session/hasJoined'
+        
+        # Valid credentials for authentication
+        self.valid_credentials = {
+            'username': 'testuser',
+            'password': 'testpass',
+            'clientToken': 'test-client-token'
+        }
+        
+        # Valid session join data
+        self.valid_join_data = {
+            'accessToken': '',  # Will be filled after authentication
+            'selectedProfile': {
+                'id': '550e8400e29b41d4a716446655440000',
+                'name': 'testuser'
+            },
+            'serverId': 'test-server-hash-12345'
+        }
+
+    def test_join_success(self):
+        """Test successful server join"""
+        # First authenticate to get access token
+        auth_response = self.client.post(
+            '/yggdrasil/auth/authenticate',
+            data=json.dumps(self.valid_credentials),
+            content_type='application/json'
+        )
+        self.assertEqual(auth_response.status_code, 200)
+        auth_data = json.loads(auth_response.content)
+        
+        # Use the access token for join request
+        join_data = self.valid_join_data.copy()
+        join_data['accessToken'] = auth_data['accessToken']
+        
+        response = self.client.post(
+            self.join_url,
+            data=json.dumps(join_data),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 204)
+
+    def test_join_missing_access_token(self):
+        """Test join request without access token"""
+        join_data = self.valid_join_data.copy()
+        del join_data['accessToken']
+        
+        response = self.client.post(
+            self.join_url,
+            data=json.dumps(join_data),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertEqual(data['error'], 'Missing accessToken')
+
+    def test_join_missing_server_id(self):
+        """Test join request without server ID"""
+        # First authenticate to get access token
+        auth_response = self.client.post(
+            '/yggdrasil/auth/authenticate',
+            data=json.dumps(self.valid_credentials),
+            content_type='application/json'
+        )
+        self.assertEqual(auth_response.status_code, 200)
+        auth_data = json.loads(auth_response.content)
+        
+        # Create join data with valid token but missing serverId
+        join_data = {
+            'accessToken': auth_data['accessToken'],
+            'selectedProfile': {
+                'id': '550e8400e29b41d4a716446655440000',
+                'name': 'testuser'
+            }
+            # serverId is missing
+        }
+        
+        response = self.client.post(
+            self.join_url,
+            data=json.dumps(join_data),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertEqual(data['error'], 'Missing serverId')
+
+    def test_join_invalid_access_token(self):
+        """Test join request with invalid access token"""
+        join_data = self.valid_join_data.copy()
+        join_data['accessToken'] = 'invalid.token.here'
+        
+        response = self.client.post(
+            self.join_url,
+            data=json.dumps(join_data),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 403)
+        data = json.loads(response.content)
+        self.assertEqual(data['error'], 'ForbiddenOperationException')
+
+    def test_join_invalid_json(self):
+        """Test join request with invalid JSON"""
+        response = self.client.post(
+            self.join_url,
+            data='invalid json',
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertEqual(data['error'], 'Invalid JSON')
+
+    def test_has_joined_success(self):
+        """Test successful hasJoined check"""
+        # First authenticate and join server
+        auth_response = self.client.post(
+            '/yggdrasil/auth/authenticate',
+            data=json.dumps(self.valid_credentials),
+            content_type='application/json'
+        )
+        auth_data = json.loads(auth_response.content)
+        
+        join_data = self.valid_join_data.copy()
+        join_data['accessToken'] = auth_data['accessToken']
+        
+        join_response = self.client.post(
+            self.join_url,
+            data=json.dumps(join_data),
+            content_type='application/json'
+        )
+        self.assertEqual(join_response.status_code, 204)
+        
+        # Now check hasJoined
+        response = self.client.get(
+            f'{self.has_joined_url}?username=testuser&serverId=test-server-hash-12345'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn('id', data)
+        self.assertIn('name', data)
+        self.assertIn('properties', data)
+        self.assertEqual(data['name'], 'testuser')
+
+    def test_has_joined_not_found(self):
+        """Test hasJoined when user hasn't joined"""
+        response = self.client.get(
+            f'{self.has_joined_url}?username=testuser&serverId=nonexistent-server'
+        )
+        
+        self.assertEqual(response.status_code, 204)
+
+    def test_has_joined_missing_username(self):
+        """Test hasJoined without username parameter"""
+        response = self.client.get(
+            f'{self.has_joined_url}?serverId=test-server-hash-12345'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertEqual(data['error'], 'Missing username parameter')
+
+    def test_has_joined_missing_server_id(self):
+        """Test hasJoined without serverId parameter"""
+        response = self.client.get(
+            f'{self.has_joined_url}?username=testuser'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertEqual(data['error'], 'Missing serverId parameter')
+
+    def test_minecraft_profile_success(self):
+        """Test successful minecraft profile request"""
+        response = self.client.get(
+            '/yggdrasil/session/minecraft/profile/550e8400e29b41d4a716446655440000'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        
+        self.assertIn('id', data)
+        self.assertIn('name', data)
+        self.assertIn('properties', data)
+        self.assertEqual(data['id'], '550e8400e29b41d4a716446655440000')
+        self.assertEqual(data['name'], 'testuser')
+        
+        # Check properties
+        self.assertIsInstance(data['properties'], list)
+        self.assertGreater(len(data['properties']), 0)
+        
+        texture_property = data['properties'][0]
+        self.assertEqual(texture_property['name'], 'textures')
+        self.assertIn('value', texture_property)
+        
+        # Check that value is valid Base64
+        import base64
+        try:
+            decoded = base64.b64decode(texture_property['value'])
+            texture_data = json.loads(decoded.decode('utf-8'))
+            self.assertIn('timestamp', texture_data)
+            self.assertIn('profileId', texture_data)
+            self.assertIn('profileName', texture_data)
+            self.assertIn('textures', texture_data)
+        except Exception:
+            self.fail("Texture value is not valid Base64 JSON")
+
+    def test_minecraft_profile_not_found(self):
+        """Test minecraft profile request for non-existent profile"""
+        response = self.client.get(
+            '/yggdrasil/session/minecraft/profile/nonexistent-profile-id'
+        )
+        
+        self.assertEqual(response.status_code, 404)
+        data = json.loads(response.content)
+        self.assertEqual(data['error'], 'Profile not found')
+
+    def test_minecraft_profile_unsigned_true(self):
+        """Test minecraft profile request with unsigned=true"""
+        response = self.client.get(
+            '/yggdrasil/session/minecraft/profile/550e8400e29b41d4a716446655440000?unsigned=true'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        
+        # Should not have signature when unsigned=true
+        texture_property = data['properties'][0]
+        self.assertNotIn('signature', texture_property)
+
+    def test_minecraft_profile_unsigned_false(self):
+        """Test minecraft profile request with unsigned=false"""
+        response = self.client.get(
+            '/yggdrasil/session/minecraft/profile/550e8400e29b41d4a716446655440000?unsigned=false'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        
+        # Should have signature when unsigned=false
+        texture_property = data['properties'][0]
+        self.assertIn('signature', texture_property)
+
