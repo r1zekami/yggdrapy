@@ -1,7 +1,5 @@
 import re
 
-'''Should be better with it than without it'''
-
 
 def sanitize_string(value, max_length=64, allow_empty=False):
     """Sanitize string input to prevent injection attacks or something like that"""
