@@ -128,10 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Django specific
-media/
-staticfiles/
-static/
 
 # IDE
 .vscode/
