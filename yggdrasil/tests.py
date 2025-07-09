@@ -4,11 +4,26 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from unittest.mock import patch
 import jwt
+from django.contrib.auth.models import User
+from accounts.models import Profile
+import uuid
 
 
 class YggdrasilAuthTestCase(TestCase):
     def setUp(self):
-        """Setup before each test"""
+        self.valid_user_uuid = uuid.UUID("11111111-1111-1111-1111-111111111111")
+        self.valid_profile_uuid = uuid.UUID("123e4567-e89b-12d3-a456-426614174000")
+        self.invalid_profile_uuid = uuid.UUID("deadbeef-dead-beef-dead-beefdeadbeef")
+        self.bad_format_uuid = "not-a-uuid"
+
+        self.user = User.objects.create_user(username='testuser', password='testpass_123zxc')
+        self.profile = Profile.objects.create(
+            user=self.user,
+            user_UUID=self.valid_user_uuid,
+            profile_UUID=self.valid_profile_uuid,
+            access_token=None,
+            client_token=None
+        )
         self.client = Client()
         self.authenticate_url = '/yggdrasil/auth/authenticate'
         self.refresh_url = '/yggdrasil/auth/refresh'
@@ -18,14 +33,16 @@ class YggdrasilAuthTestCase(TestCase):
         
         self.valid_credentials = {
             'username': 'testuser',
-            'password': 'testpass',
-            'clientToken': 'test-client-token'
+            'password': 'testpass_123zxc',
+            'clientToken': 'test-client-token',
+            'profile_UUID': str(self.valid_profile_uuid),
         }
         
         self.invalid_credentials = {
             'username': 'wronguser',
             'password': 'wrongpass',
-            'clientToken': 'test-client-token'
+            'clientToken': 'test-client-token',
+            'profile_UUID': str(self.invalid_profile_uuid),
         }
 
     def test_authenticate_success(self):
@@ -110,7 +127,7 @@ class YggdrasilAuthTestCase(TestCase):
         for username in invalid_usernames:
             test_data = {
                 'username': username,
-                'password': 'testpass',
+                'password': 'testpass_123zxc',
                 'clientToken': 'test-client-token'
             }
             response = self.client.post(
@@ -127,7 +144,7 @@ class YggdrasilAuthTestCase(TestCase):
         for username in valid_but_wrong_usernames:
             test_data = {
                 'username': username,
-                'password': 'testpass',
+                'password': 'testpass_123zxc',
                 'clientToken': 'test-client-token'
             }
             response = self.client.post(
@@ -299,7 +316,7 @@ class YggdrasilAuthTestCase(TestCase):
         """Test successful signout"""
         signout_data = {
             'username': 'testuser',
-            'password': 'testpass'
+            'password': 'testpass_123zxc'
         }
         
         response = self.client.post(
@@ -449,15 +466,15 @@ class YggdrasilAuthTestCase(TestCase):
         """Test malicious input handling"""
         malicious_inputs = [
             # SQL injection
-            {'username': "'; DROP TABLE users; --", 'password': 'testpass'},
+            {'username': "'; DROP TABLE users; --", 'password': 'testpass_123zxc'},
             # XSS
-            {'username': '<script>alert("xss")</script>', 'password': 'testpass'},
+            {'username': '<script>alert("xss")</script>', 'password': 'testpass_123zxc'},
             # Very long inputs
             {'username': 'a' * 1000, 'password': 'b' * 1000},
             # Null bytes
-            {'username': 'user\x00name', 'password': 'testpass'},
+            {'username': 'user\x00name', 'password': 'testpass_123zxc'},
             # Unicode injection
-            {'username': 'user\u0000name', 'password': 'testpass'},
+            {'username': 'user\u0000name', 'password': 'testpass_123zxc'},
         ]
         
         for malicious_input in malicious_inputs:
@@ -541,12 +558,13 @@ class YggdrasilURLTestCase(TestCase):
 
 class YggdrasilIntegrationTestCase(TestCase):
     """Integration tests for full cycle"""
-    
     def setUp(self):
+        self.user = User.objects.create_user(username='testuser', password='testpass_123zxc')
+        self.profile = Profile.objects.create(user=self.user)
         self.client = Client()
         self.credentials = {
             'username': 'testuser',
-            'password': 'testpass',
+            'password': 'testpass_123zxc',
             'clientToken': 'integration-test-token'
         }
 
@@ -654,24 +672,22 @@ class YggdrasilIntegrationTestCase(TestCase):
 
 class YggdrasilSessionTestCase(TestCase):
     """Test cases for session management endpoints"""
-    
     def setUp(self):
-        """Set up test data"""
+        self.user = User.objects.create_user(username='testuser', password='testpass_123zxc')
+        self.profile = Profile.objects.create(user=self.user)
         self.join_url = '/yggdrasil/session/join'
         self.has_joined_url = '/yggdrasil/session/hasJoined'
-        
         # Valid credentials for authentication
         self.valid_credentials = {
             'username': 'testuser',
-            'password': 'testpass',
+            'password': 'testpass_123zxc',
             'clientToken': 'test-client-token'
         }
-        
         # Valid session join data
         self.valid_join_data = {
             'accessToken': '',  # Will be filled after authentication
             'selectedProfile': {
-                'id': '550e8400e29b41d4a716446655440000',
+                'id': str(self.profile.profile_UUID),
                 'name': 'testuser'
             },
             'serverId': 'test-server-hash-12345'
