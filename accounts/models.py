@@ -7,8 +7,7 @@ class Profile(models.Model):
     user_UUID = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     profile_UUID = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     access_token = models.CharField(max_length=512, blank=True, null=True)
-    client_token = models.CharField(max_length=128, blank=True, null=True)
-
+    client_token = models.CharField(max_length=36, blank=True, null=True)
     def __str__(self):
         return str(self.user) if hasattr(self, 'user') and self.user else 'Profile'
 

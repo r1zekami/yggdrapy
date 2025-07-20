@@ -23,7 +23,10 @@ from .views import index
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('yggdrasil/', include('yggdrasil.urls')),
+    
+    path('yggdrasil/', include('api.yggdrasil.urls')),
+    path('authlib-injector/', include('api.authlib_injector.urls')),
+    path('skinserver/', include('api.skinserver.urls')),
 
     path('', index, name='index'),
     path('accounts/', include('accounts.urls')),

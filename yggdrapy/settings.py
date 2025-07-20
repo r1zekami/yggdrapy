@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'accounts.apps.AccountsConfig',
     'main.apps.MainConfig',
-    'yggdrasil'
+    'api.apps.ApiConfig',
 ]
 
 MIDDLEWARE = [
